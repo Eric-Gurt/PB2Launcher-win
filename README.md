@@ -15,4 +15,4 @@ Everytime you modify the source code, type 'dotnet run' to recompile it.
 To understand what exactly is .NET, watch this video below.
 https://www.youtube.com/watch?v=bEfBfBQq7EE&ab_channel=ScottHanselman
 
-Run the program with cmd.exe to view console output.
+Run the program with cmd.exe to view console output. Make sure you have a copy of the data folder in your executable's directory when testing it out yourself.
