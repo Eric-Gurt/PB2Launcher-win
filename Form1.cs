@@ -17,10 +17,14 @@ using System.Threading;
 //using Gecko;
 //using GeckoFX;
 
+using System.Security.Cryptography;
+
 namespace PB2Launcher
 {
     public partial class Form1 : Form
     {
+        //User created password will not be shorter than 6 characters.
+        public static String MISSINGAUTHFILE = "N/A";
         private WebBrowser webBrowser1 = null;
         //private GeckoWebBrowser webBrowser1 = null;
 
@@ -171,9 +175,64 @@ namespace PB2Launcher
                     File.WriteAllTextAsync("_error3.v", "URI format exception - could not navigate. But was able to proceed with regular string");
                 }*/
                 return;
-            }
-        }
+            }  
+            
+            /* 
+                Flow of this part of the code:
+                1. Attempt to decrypt and retrieve password through getPlaintextPassword()
 
+                If successful:
+                2. Check if 3 days has passed, generate a new key if so
+
+                Failing to decrypt it. (Invalid key: Possible sceanrios include: First time launching / PB2Launcher folder was shared..)
+                - Generate a new key (at CryptographicException exception block)
+            */
+            //---------------------------------------------------------------------------------------------------------
+            Aes aes = new Aes();
+            try
+            {
+                //Step 1.
+                //If missing .auth file, returns N/A.
+                //If missing key file or invalid key, CryptographicException will be thrown.
+                String plaintextPass = aes.getPlaintextPassword();
+
+                //If missing .auth file, regenerate key and ask for login (jump into CryptographicException exception block).
+                if(plaintextPass.Equals("N/A"))
+                {
+                    Console.WriteLine("\nMissing .auth file, throwing exception to regenerate key..");
+                    throw new CryptographicException();
+                }
+
+                //Reaching here, decryption is successful. Plaintext of password is obtained.
+                Console.WriteLine("Successful decryption.");
+
+                //Step 2. Verify if key is not older than MAX_KEY_LIFE days.
+                //If key is older, key will be regenerated without needing to reprompt login.
+                aes.verifyAge(GetLogin(),plaintextPass);
+            }
+            //Only catch if it's an exception related to decryption.
+            //Key is invalid, don't skip authentication and regenerate key.
+            catch(CryptographicException)
+            {
+                Console.WriteLine("-----\nDecryption failed");
+                //File.WriteAllTextAsync("_error5.v", "Exception during decryption; this indicates invalid key. Re-generating another key..\n" + ex.ToString());
+
+                //By deleting both of these files before WindowsForm loads, user will have to reprompt credentials.
+                File.Delete("data\\skip_auth.v");
+                File.Delete("data\\Plazma Burst 2.auth");
+
+                //Setting ForceRegenerate to 1, generating key even with key file.
+                aes.setKey(1);
+            }
+            //This block of code should never happen.
+            catch(Exception ex)
+            {
+                File.WriteAllTextAsync("errorFatal.txt","Fatal error, " + ex.ToString());
+                Application.Exit();
+            }
+            //---------------------------------------------------------------------------------------------------------
+        }
+        
         /*private void webBrowser1_Navigating(object sender, WebBrowserNavigatingEventArgs e)
         {
             
@@ -185,8 +244,8 @@ namespace PB2Launcher
         private bool IsOnline = true;
 
         private void OnDocumentCompleted(object sender, WebBrowserDocumentCompletedEventArgs e)
-        {
-            
+        {   
+
             try
             {
                 WebBrowser webBrowser1 = (WebBrowser)sender;
@@ -271,9 +330,15 @@ namespace PB2Launcher
 
             if (File.Exists("data\\Plazma Burst 2.auth"))
             {
-                String[] text = File.ReadAllText("data\\Plazma Burst 2.auth").Split('\n', 2);
+                String login = File.ReadAllText("data\\Plazma Burst 2.auth").Split('\n', 2)[0];
+                
+                Aes aes = new Aes();
+                String plaintextPass = aes.getPlaintextPassword();
+                //Retrieved password, set object to null for garbage collection.
+                aes = null;
 
-                myparams = "?l=" + text[0] + "&p=" + text[1] + "&from_standalone=1";
+                //File.WriteAllText("_debug.txt", "Password: " + plaintextPass);
+                myparams = "?l=" + login + "&p=" + plaintextPass + "&from_standalone=1";
             }
 
             ProcessStartInfo startInfo = new ProcessStartInfo("data\\flashplayer11_7r700_224_win_sa.exe");
@@ -372,9 +437,22 @@ namespace PB2Launcher
             }
             return "Guest";
         }
+        //Retrieve password, static.
+        public static String getPassword()
+        {
+            if (File.Exists("data\\Plazma Burst 2.auth"))
+            {
+                return File.ReadAllText("data\\Plazma Burst 2.auth").Split('\n', 2)[1];
+            }
+            return MISSINGAUTHFILE;
+        }
+        
         public void SaveLoginPassword(String l, String p)
         {
-            File.WriteAllText("data\\Plazma Burst 2.auth", l + '\n' + p);
+            Aes aes = new Aes();
+            byte[] encryptedPass = aes.EncryptToByte(p);
+
+            File.WriteAllText("data\\Plazma Burst 2.auth", l + '\n' + Convert.ToBase64String(encryptedPass));
         }
         public void DontAskForLogin()
         {
